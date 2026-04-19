@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "silence-ml"
+version = "0.1.0"
+description = "ML backend for the Silence silent-speech device"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Roman Slack" }]
+dependencies = [
+    "torch>=2.11",
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "mne>=1.7",
+    "soundfile>=0.12",
+    "tqdm>=4.66",
+    "pyyaml>=6.0",
+    "requests>=2.32",
+]
+
+[project.optional-dependencies]
+hw = [
+    "brainflow>=5.21",
+    "pyserial>=3.5",
+    "bleak>=0.22",
+]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "ipython>=8",
+    "matplotlib>=3.9",
+]
+
+[tool.setuptools.packages.find]
+include = ["silence_ml*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

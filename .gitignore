@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.ipynb_checkpoints/
+.ruff_cache/
+.pytest_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+
+# ML artifacts (large or regenerable)
+ml_backend/data/
+ml_backend/checkpoints/
+ml_backend/runs/
+ml_backend/wandb/
+*.pt
+*.ckpt
+
+# Recorder sessions (raw EMG recordings stay local)
+recorder/data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code harness state
+.claude/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
