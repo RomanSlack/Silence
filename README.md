@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="readme_images/shhhh-cat-sigma.png" alt="shhh" width="420" />
+</p>
+
 Project: Personal Silent Speech Recognition System (SSR) — DIY AlterEgo
 Mission: Build a working silent speech recognition system trained on a single user (me), reaching AlterEgo-level quality (target ~92% accuracy on a personal vocabulary). This is a research/personal project — MVP is a system that works on me specifically, no generalization required. End goal is eventually a silent universal translation system and invisible AI assistant interface.
 Hardware:
