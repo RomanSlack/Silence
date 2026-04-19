@@ -34,8 +34,9 @@ recorder/data/
 .DS_Store
 Thumbs.db
 
-# Claude Code harness state
-.claude/
+# Claude Code harness state (but keep slash commands checked in)
+.claude/*
+!.claude/commands/
 
 # Editor
 .idea/
