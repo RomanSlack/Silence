@@ -100,13 +100,39 @@ class MockBoard:
         return out.astype(np.float32)
 
 
+class CytonBoard:
+    """Live OpenBCI Cyton board via BrainFlow. CP2102 wired serial connection."""
+
+    sample_rate = 250.0
+    n_channels = 8
+
+    def __init__(self, serial_port: str = "/dev/ttyUSB0"):
+        from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
+        BoardShim.disable_board_logger()
+        params = BrainFlowInputParams()
+        params.serial_port = serial_port
+        self._board = BoardShim(BoardIds.CYTON_BOARD.value, params)
+        self._emg_channels = list(range(8))  # Cyton channels 0-7 are the 8 EXG channels
+
+    def start(self) -> None:
+        self._board.prepare_session()
+        self._board.start_stream()
+
+    def stop(self) -> None:
+        self._board.stop_stream()
+        self._board.release_session()
+
+    def capture(self, duration_sec: float) -> np.ndarray:
+        """Block for duration_sec, return (8, n_samples) float32 in µV."""
+        time.sleep(duration_sec)
+        data = self._board.get_current_board_data(int(duration_sec * self.sample_rate))
+        return data[self._emg_channels, :].astype(np.float32)
+
+
 def make_board(kind: str = "mock", **kw) -> Board:
     if kind == "mock":
         return MockBoard(**kw)
     if kind == "cyton":
-        raise NotImplementedError(
-            "CytonBoard is blocked on seller-provided custom firmware. "
-            "When ready, implement with brainflow.BoardShim(BoardIds.CYTON_BOARD, ...) "
-            "and expose start/stop/capture matching this Board protocol."
-        )
+        serial_port = kw.pop("serial_port", "/dev/ttyUSB0")
+        return CytonBoard(serial_port=serial_port)
     raise ValueError(f"unknown board kind: {kind}")
