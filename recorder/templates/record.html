@@ -10,7 +10,12 @@
 <header class="topbar">
   <div class="brand">silence · recorder</div>
   <div class="meta">
-    <span>session <b>{{ session_name }}</b></span>
+    <span class="session-wrap">
+      session <b id="session-name">{{ session_name }}</b>
+      <button class="btn-sm" id="btn-sessions" title="switch session">▾</button>
+      <button class="btn-sm" id="btn-new-session" title="new session">＋ new</button>
+      <div class="session-dropdown" id="session-dropdown" hidden></div>
+    </span>
     <span>{{ n_channels }} ch @ {{ sample_rate|int }} Hz</span>
     <span>{{ duration }}s / trial</span>
     <span>mode <b id="mode">round-robin</b></span>

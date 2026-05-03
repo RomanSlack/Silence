@@ -1,2 +1,8 @@
 Mastoid - Behind Ear Bone thing - SRB (Org) BIAS (Brwn) - Bias then SRB
 Masseter - On ball of jaw pivot - N2P (Red)
+
+
+
+New:
+Masseter = N1P - Top Orange  , Bottom Red
+Orbicularis Oris - N2P - Top Brown , Bottom Black

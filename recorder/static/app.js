@@ -139,6 +139,45 @@
   document.getElementById("btn-record").onclick = recordOne;
   document.getElementById("btn-undo").onclick = undo;
 
+  // session picker
+  const sessionNameEl = document.getElementById("session-name");
+  const dropdownEl    = document.getElementById("session-dropdown");
+
+  document.getElementById("btn-new-session").onclick = async () => {
+    const r = await fetch("/api/new-session", { method: "POST" });
+    const d = await r.json();
+    if (d.ok) { sessionNameEl.textContent = d.session; counts = {}; renderGrid(); toast("new session: " + d.session); }
+  };
+
+  document.getElementById("btn-sessions").onclick = async () => {
+    if (!dropdownEl.hidden) { dropdownEl.hidden = true; return; }
+    const r = await fetch("/api/sessions");
+    const d = await r.json();
+    dropdownEl.innerHTML = "";
+    d.sessions.forEach(name => {
+      const el = document.createElement("div");
+      el.className = "session-item" + (name === d.current ? " current" : "");
+      el.textContent = name;
+      el.onclick = async () => {
+        dropdownEl.hidden = true;
+        const res = await fetch("/api/load-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session: name }),
+        });
+        const data = await res.json();
+        if (data.ok) { sessionNameEl.textContent = data.session; await refreshState(); updateWord(); toast("loaded: " + data.session); }
+      };
+      dropdownEl.appendChild(el);
+    });
+    dropdownEl.hidden = false;
+  };
+
+  document.addEventListener("click", e => {
+    if (!dropdownEl.hidden && !dropdownEl.contains(e.target) && e.target.id !== "btn-sessions")
+      dropdownEl.hidden = true;
+  });
+
   modeEl.textContent = modeLabel();
   refreshState().then(updateWord);
 })();

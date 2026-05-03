@@ -101,21 +101,33 @@ class MockBoard:
 
 
 class CytonBoard:
-    """Live OpenBCI Cyton board via BrainFlow. CP2102 wired serial connection."""
+    """Live OpenBCI Cyton clone via BrainFlow. CP2102 wired serial connection.
+
+    This clone's BIAS and SRB pins are dead, so we run bipolar mode:
+    two electrodes per channel (N*P + N*N), no shared reference.
+    CH1 = masseter, CH2 = orbicularis oris.
+    """
 
     sample_rate = 250.0
     n_channels = 8
 
+    # Bipolar: gain 24x, normal input, no BIAS, no SRB2, no SRB1
+    _BIPOLAR_CMDS = ['x1060000X', 'x2060000X']
+
     def __init__(self, serial_port: str = "/dev/ttyUSB0"):
         from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
+        board_id = BoardIds.CYTON_BOARD.value
         BoardShim.disable_board_logger()
         params = BrainFlowInputParams()
         params.serial_port = serial_port
-        self._board = BoardShim(BoardIds.CYTON_BOARD.value, params)
-        self._emg_channels = list(range(8))  # Cyton channels 0-7 are the 8 EXG channels
+        self._board = BoardShim(board_id, params)
+        self._emg_rows = BoardShim.get_emg_channels(board_id)
 
     def start(self) -> None:
         self._board.prepare_session()
+        for cmd in self._BIPOLAR_CMDS:
+            self._board.config_board(cmd)
+            time.sleep(0.3)
         self._board.start_stream()
 
     def stop(self) -> None:
@@ -126,7 +138,7 @@ class CytonBoard:
         """Block for duration_sec, return (8, n_samples) float32 in µV."""
         time.sleep(duration_sec)
         data = self._board.get_current_board_data(int(duration_sec * self.sample_rate))
-        return data[self._emg_channels, :].astype(np.float32)
+        return data[self._emg_rows, :].astype(np.float32)
 
 
 def make_board(kind: str = "mock", **kw) -> Board:

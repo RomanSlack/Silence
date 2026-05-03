@@ -51,8 +51,29 @@ header.topbar .brand {
   letter-spacing: 0.04em;
 }
 
-header.topbar .meta { display: flex; gap: 22px; font-variant-numeric: tabular-nums; }
+header.topbar .meta { display: flex; gap: 22px; font-variant-numeric: tabular-nums; align-items: center; }
 header.topbar .meta b { color: var(--text); font-weight: 500; }
+
+.session-wrap { position: relative; display: flex; align-items: center; gap: 6px; }
+
+button.btn-sm {
+  background: #1c1e24; border: 1px solid var(--border); color: var(--text-dim);
+  border-radius: 4px; padding: 1px 6px; font-size: 11px; cursor: pointer; line-height: 1.6;
+}
+button.btn-sm:hover { background: #23262e; color: var(--text); }
+
+.session-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 100;
+  background: #1c1e24; border: 1px solid var(--border); border-radius: 6px;
+  min-width: 220px; max-height: 260px; overflow-y: auto;
+  box-shadow: var(--shadow);
+}
+.session-item {
+  padding: 7px 12px; font-size: 12px; cursor: pointer; color: var(--text-dim);
+  font-family: monospace;
+}
+.session-item:hover { background: #23262e; color: var(--text); }
+.session-item.current { color: var(--accent); }
 
 main.stage {
   flex: 1;

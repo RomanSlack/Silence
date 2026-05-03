@@ -38,42 +38,47 @@ def create_app(session: Session, board, trial_duration_sec: float) -> Flask:
     app.config["BOARD"] = board
     app.config["TRIAL_DURATION_SEC"] = trial_duration_sec
 
+    def sess() -> Session:
+        return app.config["SESSION"]
+
     @app.route("/")
     def index():
         return redirect(url_for("record"))
 
     @app.route("/record")
     def record():
+        s = sess()
         return render_template(
             "record.html",
-            session_name=session.name,
-            vocab=session.vocab,
+            session_name=s.name,
+            vocab=s.vocab,
             duration=trial_duration_sec,
-            sample_rate=session.sample_rate,
-            n_channels=session.n_channels,
+            sample_rate=s.sample_rate,
+            n_channels=s.n_channels,
         )
 
     @app.route("/api/state")
     def api_state():
-        counts = session.counts()
+        s = sess()
         return jsonify({
-            "session": session.name,
-            "vocab": session.vocab,
-            "counts": counts,
-            "total": session.total(),
+            "session": s.name,
+            "vocab": s.vocab,
+            "counts": s.counts(),
+            "total": s.total(),
             "duration": trial_duration_sec,
-            "sample_rate": session.sample_rate,
-            "n_channels": session.n_channels,
+            "sample_rate": s.sample_rate,
+            "n_channels": s.n_channels,
             "board": type(board).__name__,
         })
 
     @app.route("/api/record", methods=["POST"])
     def api_record():
+        s = sess()
         word = (request.json or {}).get("word", "").strip().lower()
-        if word not in session.vocab:
+        if word not in s.vocab:
             return jsonify({"error": f"bad word: {word!r}"}), 400
         signal = board.capture(trial_duration_sec)
-        trial = session.save_trial(word, signal, trial_duration_sec)
+        trial = s.save_trial(word, signal, trial_duration_sec)
         rms = float((signal ** 2).mean() ** 0.5)
         peak = float(abs(signal).max())
         return jsonify({
@@ -81,23 +86,55 @@ def create_app(session: Session, board, trial_duration_sec: float) -> Flask:
             "word": trial.word,
             "trial_idx": trial.trial_idx,
             "path": trial.path,
-            "counts": session.counts(),
-            "total": session.total(),
+            "counts": s.counts(),
+            "total": s.total(),
             "rms": rms,
             "peak": peak,
         })
 
     @app.route("/api/undo", methods=["POST"])
     def api_undo():
-        trial = session.undo_last()
+        s = sess()
+        trial = s.undo_last()
         if trial is None:
             return jsonify({"ok": False, "error": "nothing to undo"}), 400
         return jsonify({
             "ok": True,
             "removed": {"word": trial.word, "trial_idx": trial.trial_idx},
-            "counts": session.counts(),
-            "total": session.total(),
+            "counts": s.counts(),
+            "total": s.total(),
         })
+
+    @app.route("/api/sessions")
+    def api_sessions():
+        dirs = sorted(
+            [p.name for p in DATA_DIR.iterdir() if p.is_dir() and (p / "manifest.json").exists()],
+            reverse=True,
+        )
+        return jsonify({"sessions": dirs, "current": sess().name})
+
+    @app.route("/api/new-session", methods=["POST"])
+    def api_new_session():
+        s = sess()
+        new_sess = Session(
+            root=DATA_DIR, name=new_session_name(),
+            vocab=s.vocab, sample_rate=s.sample_rate, n_channels=s.n_channels,
+        )
+        app.config["SESSION"] = new_sess
+        return jsonify({"ok": True, "session": new_sess.name})
+
+    @app.route("/api/load-session", methods=["POST"])
+    def api_load_session():
+        s = sess()
+        name = (request.json or {}).get("session", "").strip()
+        if not name or not (DATA_DIR / name / "manifest.json").exists():
+            return jsonify({"error": "session not found"}), 404
+        loaded = Session(
+            root=DATA_DIR, name=name,
+            vocab=s.vocab, sample_rate=s.sample_rate, n_channels=s.n_channels,
+        )
+        app.config["SESSION"] = loaded
+        return jsonify({"ok": True, "session": loaded.name})
 
     return app
 

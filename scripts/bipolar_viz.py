@@ -156,9 +156,14 @@ LABELS.forEach((lbl, i) => {
   }));
 });
 
-function stateLabel(rms) {
-  if (rms > 100) return '<span class="state-clench">CLENCH</span>';
-  if (rms > 30)  return '<span class="state-maybe">?</span>';
+const THRESHOLDS = [
+  { active: 175, maybe: 140 },   // CH1 masseter: rest ~126, clench ~220
+  { active: 60,  maybe: 30  },   // CH2 orbicularis: rest ~15-20, purse ~80+
+];
+function stateLabel(rms, i) {
+  const t = THRESHOLDS[i] || THRESHOLDS[0];
+  if (rms > t.active) return '<span class="state-clench">ACTIVE</span>';
+  if (rms > t.maybe)  return '<span class="state-maybe">?</span>';
   return '<span class="state-rest">rest</span>';
 }
 
@@ -172,7 +177,7 @@ es.onmessage = e => {
       if (ds.length > HISTORY) ds.shift();
     });
     const rms = msg.rms[i];
-    statEls[i].innerHTML = `rms: ${rms.toFixed(1)} µV &nbsp;&nbsp;·&nbsp;&nbsp; ${stateLabel(rms)}`;
+    statEls[i].innerHTML = `rms: ${rms.toFixed(1)} µV &nbsp;&nbsp;·&nbsp;&nbsp; ${stateLabel(rms, i)}`;
     charts[i].update('none');
   });
 };
