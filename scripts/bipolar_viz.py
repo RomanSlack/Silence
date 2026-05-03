@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-Live EMG waveform viewer — shows raw signal for ch1 (mentalis) and ch2 (masseter).
-Clench your jaw and watch for amplitude bursts above the noise floor.
+Live bipolar-mode EMG viewer with 20-115 Hz bandpass.
 
-Usage: sudo ../ml_backend/.venv/bin/python signal_viz.py
+Wires: electrode A -> N1P, electrode B -> N1N, ~2 cm apart on target muscle.
+(No BIAS, no SRB needed — the clone board's BIAS/SRB pins are dead.)
+
+Shows scrolling filtered waveform + rolling RMS gauge.
+Rest -> flat, RMS small. Clench -> bursts, RMS spikes.
+
+Usage: sudo ../ml_backend/.venv/bin/python scripts/bipolar_viz.py
 Then open http://127.0.0.1:5050/
 """
 
@@ -11,23 +16,38 @@ import json
 import sys
 import time
 import threading
+from collections import deque
 import numpy as np
+from scipy.signal import butter, sosfilt, sosfilt_zi
 from flask import Flask, Response, render_template_string
 
 try:
     from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
 except ImportError:
-    print("Run with venv: sudo ../ml_backend/.venv/bin/python signal_viz.py")
+    print("Run with venv: sudo ../ml_backend/.venv/bin/python scripts/bipolar_viz.py")
     sys.exit(1)
 
 PORT = "/dev/ttyUSB0"
-SAMPLE_RATE = 250
-CHUNK_SAMPLES = 25  # 100ms chunks
-DISPLAY_CHANNELS = [0, 1, 2, 3, 4, 5, 6, 7]
-CH_LABELS = [f"CH{i+1} — N{i+1}P" for i in DISPLAY_CHANNELS]
-CH_COLORS = ["#ff4444", "#ff8800", "#ffcc00", "#88ff44", "#44ffcc", "#44aaff", "#aa44ff", "#ff44aa"]
+FS = 250.0
+CHUNK_SAMPLES = 25  # 100 ms chunks
 
-latest_chunk = {"samples": [[] for _ in DISPLAY_CHANNELS], "ts": 0}
+# Bipolar config (no SRB, no BIAS) for CH1 and CH2:
+CMDS = ['x1060000X', 'x2060000X']
+
+DISPLAY_CHANNELS = [0, 1]
+CH_LABELS = ["CH1 — N1P/N1N", "CH2 — N2P/N2N"]
+CH_COLORS = ["#ff4444", "#ff8800"]
+
+sos = butter(4, [20.0, 115.0], btype='band', fs=FS, output='sos')
+zi_per_ch = [sosfilt_zi(sos).copy() for _ in DISPLAY_CHANNELS]
+
+# Rolling RMS buffer per channel (last ~0.5 s of filtered samples)
+RMS_WIN = int(0.5 * FS)
+rms_bufs = [deque(maxlen=RMS_WIN) for _ in DISPLAY_CHANNELS]
+
+latest_chunk = {"samples": [[] for _ in DISPLAY_CHANNELS],
+                "rms": [0.0 for _ in DISPLAY_CHANNELS],
+                "ts": 0}
 
 def start_board():
     BoardShim.disable_board_logger()
@@ -35,15 +55,29 @@ def start_board():
     params.serial_port = PORT
     board = BoardShim(BoardIds.CYTON_BOARD.value, params)
     board.prepare_session()
+
+    for cmd in CMDS:
+        board.config_board(cmd)
+        time.sleep(0.3)
+
     board.start_stream()
+    emg_rows = BoardShim.get_emg_channels(BoardIds.CYTON_BOARD.value)
 
     while True:
         time.sleep(0.1)
         data = board.get_current_board_data(CHUNK_SAMPLES)
         if data.shape[1] == 0:
             continue
-        samples = [data[ch].tolist() for ch in DISPLAY_CHANNELS]
-        latest_chunk["samples"] = samples
+        filtered_per_ch = []
+        for i, ch in enumerate(DISPLAY_CHANNELS):
+            raw = data[emg_rows[ch]].astype(np.float64)
+            raw -= raw.mean()  # strip DC per chunk
+            filt, zi_per_ch[i] = sosfilt(sos, raw, zi=zi_per_ch[i])
+            filtered_per_ch.append(filt.tolist())
+            rms_bufs[i].extend(filt.tolist())
+            arr = np.asarray(rms_bufs[i])
+            latest_chunk["rms"][i] = float(np.sqrt(np.mean(arr**2))) if arr.size else 0.0
+        latest_chunk["samples"] = filtered_per_ch
         latest_chunk["ts"] = time.time()
 
 app = Flask(__name__)
@@ -51,7 +85,7 @@ app = Flask(__name__)
 HTML = """<!DOCTYPE html>
 <html>
 <head>
-<title>EMG Live</title>
+<title>EMG Bipolar Live</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   body { background: #0d0d0d; color: #ccc; font-family: monospace; margin: 0; padding: 20px; }
@@ -59,16 +93,19 @@ HTML = """<!DOCTYPE html>
   p  { margin: 0 0 20px; font-size: 11px; color: #444; }
   .card { background: #161616; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
   .label { font-size: 13px; margin-bottom: 4px; }
-  .stat { font-size: 11px; color: #666; margin-bottom: 10px; }
+  .stat { font-size: 11px; color: #888; margin-bottom: 10px; }
+  .state-rest   { color: #555; }
+  .state-maybe  { color: #ffcc00; }
+  .state-clench { color: #44ff88; font-weight: bold; }
   canvas { width: 100% !important; }
 </style>
 </head>
 <body>
-<h2>EMG Live Signal</h2>
-<p>Relax jaw → flat baseline. Clench hard → big spike. Good contact = rms&lt;30 at rest, rms&gt;200 on clench.</p>
+<h2>EMG Bipolar — 20-115 Hz bandpass</h2>
+<p>Rest -> flat baseline, RMS &lt; 30 µV. Clench -> bursts, RMS &gt; 100 µV.</p>
 <div id="cards"></div>
 <script>
-const HISTORY = 500;
+const HISTORY = 750;  // ~3 s @ 250 Hz
 const COLORS = {{ colors|safe }};
 const LABELS = {{ labels|safe }};
 const charts = [], statEls = [];
@@ -82,10 +119,10 @@ LABELS.forEach((lbl, i) => {
   labelEl.textContent = lbl;
   const statEl = document.createElement('div');
   statEl.className = 'stat';
-  statEl.textContent = 'rms: —';
+  statEl.innerHTML = 'rms: — &nbsp;&nbsp;·&nbsp;&nbsp; <span class="state-rest">rest</span>';
   statEls.push(statEl);
   const canvas = document.createElement('canvas');
-  canvas.height = 120;
+  canvas.height = 140;
   card.append(labelEl, statEl, canvas);
   document.getElementById('cards').appendChild(card);
 
@@ -96,7 +133,7 @@ LABELS.forEach((lbl, i) => {
       datasets: [{
         data: Array(HISTORY).fill(0),
         borderColor: COLORS[i],
-        borderWidth: 1.5,
+        borderWidth: 1.2,
         pointRadius: 0,
         fill: false,
         tension: 0
@@ -110,25 +147,32 @@ LABELS.forEach((lbl, i) => {
         x: { display: false },
         y: {
           ticks: { color: '#555', font: { size: 10 } },
-          grid: { color: '#1e1e1e' }
+          grid: { color: '#1e1e1e' },
+          suggestedMin: -300,
+          suggestedMax: 300
         }
       }
     }
   }));
 });
 
+function stateLabel(rms) {
+  if (rms > 100) return '<span class="state-clench">CLENCH</span>';
+  if (rms > 30)  return '<span class="state-maybe">?</span>';
+  return '<span class="state-rest">rest</span>';
+}
+
 const es = new EventSource('/stream');
 es.onmessage = e => {
-  const samples = JSON.parse(e.data);
-  samples.forEach((chunk, i) => {
+  const msg = JSON.parse(e.data);
+  msg.samples.forEach((chunk, i) => {
     const ds = charts[i].data.datasets[0].data;
     chunk.forEach(v => {
       ds.push(v);
       if (ds.length > HISTORY) ds.shift();
     });
-    const arr = ds.filter(v => v !== 0);
-    const rms = arr.length ? Math.sqrt(arr.reduce((s,v) => s + v*v, 0) / arr.length) : 0;
-    statEls[i].textContent = `rms: ${rms.toFixed(1)} µV`;
+    const rms = msg.rms[i];
+    statEls[i].innerHTML = `rms: ${rms.toFixed(1)} µV &nbsp;&nbsp;·&nbsp;&nbsp; ${stateLabel(rms)}`;
     charts[i].update('none');
   });
 };
@@ -150,13 +194,13 @@ def stream():
             time.sleep(0.05)
             if latest_chunk["ts"] != last_ts:
                 last_ts = latest_chunk["ts"]
-                yield f"data: {json.dumps(latest_chunk['samples'])}\n\n"
+                yield f"data: {json.dumps({'samples': latest_chunk['samples'], 'rms': latest_chunk['rms']})}\n\n"
     return Response(gen(), mimetype="text/event-stream")
 
 if __name__ == "__main__":
-    print("Connecting to board...")
+    print("Connecting to board and configuring bipolar mode for CH1+CH2...")
     t = threading.Thread(target=start_board, daemon=True)
     t.start()
-    time.sleep(3)
+    time.sleep(4)
     print("Open http://127.0.0.1:5050/")
     app.run(host="127.0.0.1", port=5050, threaded=True)
